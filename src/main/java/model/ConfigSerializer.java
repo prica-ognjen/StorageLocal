@@ -2,18 +2,33 @@ package model;
 
 import com.google.gson.*;
 import user.Privilege;
+import user.User;
 import user.UserType;
 
 import java.lang.reflect.Type;
-import java.util.*;
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.HashMap;
+import java.util.Map;
 
 public class ConfigSerializer implements JsonSerializer<Config>, JsonDeserializer<Config> {
     @Override
     public JsonElement serialize(Config config, Type type, JsonSerializationContext jsonSerializationContext) {
         JsonObject jsonUser = new JsonObject();
-        jsonUser.addProperty("sizeLimit", config.getSize());
-        jsonUser.addProperty("fileNumberLimit", config.getFileLimit());
-        jsonUser.addProperty("excludedExtensions", String.valueOf(config.getExclExt()));
+        jsonUser.addProperty("sizeLimit", config.getSizeLimit());
+        jsonUser.addProperty("fileNumLimit", config.getFileNumLimit());
+
+        StringBuilder jsonArray = new StringBuilder();
+        jsonArray.append("[");
+        for(int i = 0; i < config.getBlockedExtensions().size()-1; i++){
+            jsonArray.append("\"");
+            jsonArray.append(config.getBlockedExtensions().get(i));
+            jsonArray.append("\"");
+            if(i != config.getBlockedExtensions().size()-2)
+                jsonArray.append(",");
+        }
+        jsonArray.append("]");
+        jsonUser.addProperty("blockedExtensions", config.getBlockedExtensions().toString());
         return jsonUser;
     }
 
@@ -21,20 +36,25 @@ public class ConfigSerializer implements JsonSerializer<Config>, JsonDeserialize
     public Config deserialize(JsonElement jsonElement, Type type, JsonDeserializationContext jsonDeserializationContext) throws JsonParseException {
         JsonObject jsonObject = jsonElement.getAsJsonObject();
 
-        String excludedExtensions = jsonObject.get("excludedExtensions").toString();
-        excludedExtensions = excludedExtensions.replace("\"","");
-        excludedExtensions = excludedExtensions.replace("{", "");
-        excludedExtensions = excludedExtensions.replace("}", "");
-        excludedExtensions = excludedExtensions.replace("]", "");
-        excludedExtensions = excludedExtensions.replace("[", "");
-        String[] split = excludedExtensions.split(",");
+        String tempExtensions = jsonObject.get("blockedExtensions").toString();
+        tempExtensions = tempExtensions.replace("\"","");
+        tempExtensions = tempExtensions.replace("{", "");
+        tempExtensions = tempExtensions.replace("}", "");
+        tempExtensions = tempExtensions.replace("[", "");
+        tempExtensions = tempExtensions.replace("]", "");
+        String[] split = tempExtensions.split(",");
 
-        List<String> exc = new ArrayList<>(Arrays.asList(split));
+        ArrayList<String> list = new ArrayList<>();
+
+        for(String s: split){
+            if(!s.equals(""))
+                list.add(s);
+        }
 
         return new Config(
                 jsonObject.get("sizeLimit").getAsInt(),
-                jsonObject.get("fileNumberLimit").getAsInt(),
-                exc
+                jsonObject.get("fileNumLimit").getAsInt(),
+                list
         );
     }
 }

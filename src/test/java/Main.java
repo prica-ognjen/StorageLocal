@@ -92,7 +92,124 @@ public class Main {
                 }
             }
 
+            if(msg.contains("addFile")){
+                String[] temp = msg.split(" ");
+                if(temp.length != 2 && temp.length != 3){
+                    System.out.println("Error: function addFile needs 1 or 2 arguments \naddFile [fileName]\naddFile [fileName] [pathFromRoot]");
+                }else{
+                    if(temp.length==2)
+                        System.out.println(conn.createFile(temp[1]));
+                    else
+                        System.out.println(conn.createFile(temp[1], temp[2]));
+                }
+            }
+            if(msg.contains("delFile")){
+                String[] temp = msg.split(" ");
+                if(temp.length != 2 && temp.length != 3){
+                    System.out.println("Error: function delFile needs 1 or 2 arguments \ndelFile [fileName]\ndelFile [fileName] [pathFromRoot]");
+                }else{
+                    if(temp.length==2)
+                        System.out.println(conn.delFile(temp[1]));
+                    else
+                        System.out.println(conn.delFile(temp[1], temp[2]));
+                }
+            }
+
+            if(msg.contains("addDir")){
+                String[] temp = msg.split(" ");
+                if(temp.length != 2 && temp.length != 3){
+                    System.out.println("Error: function addDir needs 1 or 2 arguments \naddDir [fileName]\naddDir [fileName] [pathFromRoot]");
+                }else{
+                    if(temp.length==2)
+                        System.out.println(conn.createDir(temp[1]));
+                    else
+                        System.out.println(conn.createDir(temp[1], temp[2]));
+                }
+            }
+
+            if(msg.contains("delDir")){
+                String[] temp = msg.split(" ");
+                if(temp.length != 2 && temp.length != 3){
+                    System.out.println("Error: function delDir needs 1 or 2 arguments \ndelDir [fileName]\ndelDir [fileName] [pathFromRoot]");
+                }else{
+                    if(temp.length==2)
+                        System.out.println(conn.delDir(temp[1]));
+                    else
+                        System.out.println(conn.delDir(temp[1], temp[2]));
+                }
+            }
+
+            if(msg.contains("ls")){
+                String[] temp = msg.split(" ");
+                if(temp.length != 1 && temp.length != 2){
+                    System.out.println("Error: function delDir needs 1 or 2 arguments \nls [dirName]\nls [pathFromRoot]");
+                }else{
+                    if(temp.length==1)
+
+                        for(String f: conn.listDir()){
+                            System.out.printf("%10s %-10s", "|", f);
+                            System.out.println();
+                        }
+                    else
+                        for(String f: conn.listDir(temp[1])){
+                            System.out.printf("%10s %-10s", "|", f);
+                            System.out.println();
+                        }
+                }
+            }
+
+            if(msg.contains("movFile")){
+                String[] temp = msg.split(" ");
+                if(temp.length != 3){
+                    System.out.println("Error: function movFile needs 2 arguments \nmovFile [file] [destination]");
+                }else{
+                    System.out.println(conn.movFile(temp[1], temp[2]));
+                }
+            }
+
+            if(msg.contains("movDir")){
+                String[] temp = msg.split(" ");
+                if(temp.length != 3){
+                    System.out.println("Error: function movDir needs 2 arguments \nmovDir [dir] [destination]");
+                }else{
+                    System.out.println(conn.movDir(temp[1], temp[2]));
+                }
+            }
+
+            if(msg.contains("dwnFile")){
+                String[] temp = msg.split(" ");
+                if(temp.length != 3){
+                    System.out.println("Error: function dwnFile needs 2 arguments \ndwnFile [file] [destination]");
+                }else{
+                    System.out.println(conn.downloadFile(temp[1], temp[2]));
+                }
+            }
+            if(msg.contains("limitSize")){
+                String[] temp = msg.split(" ");
+                if(temp.length != 2){
+                    System.out.println("Error: function limitSize needs 1 argument \nlimitSize [size]");
+                }else{
+                    System.out.println(conn.limitStorageSize(s.getPath()+"\\"+s.getName(), Integer.parseInt(temp[1])));
+                }
+            }
+            if(msg.contains("limitNum")){
+                String[] temp = msg.split(" ");
+                if(temp.length != 2){
+                    System.out.println("Error: function limitNum needs 1 argument \nlimitNum [size]");
+                }else{
+                    System.out.println(conn.limitFileNumber(s.getPath()+"\\"+s.getName(), Integer.parseInt(temp[1])));
+                }
+            }
+            if(msg.contains("blockExt")){
+                String[] temp = msg.split(" ");
+                if(temp.length != 2){
+                    System.out.println("Error: function blockExt needs 1 argument \nblockExt [extension]");
+                }else{
+                    System.out.println(conn.blockExtForStorage(s.getPath()+"\\"+s.getName(), temp[1]));
+                }
+            }
             if(msg.equals("logout")){
+                System.out.println("Logging out");
                 conn.closeConnectionToUser();
                 Storage temp = null;
                 while(temp==null){
@@ -100,7 +217,7 @@ public class Main {
                     msg = in.nextLine();
                     String[] split = msg.split(" ");
 
-                    if(split.length != 3){
+                    if(split.length != 3 || !split[0].equals("login")){
                         System.out.println("Error: to call any function you must be connected to storage.\n" +
                                 "\tUse: login [username] [password] to connect to current storage.\n" +
                                 "\tUse: login [pathToStorage] [username] [password] to connect to another storage.");
@@ -111,8 +228,9 @@ public class Main {
                             temp = conn.connectToStorage(path + "\\" + sName, username, password);
                         }catch(AuthException e){
                             e.printStackTrace();
+                            continue;
                         }
-                        System.out.print("\n");
+                        System.out.print("Logged in  \n");
                     }
 
 

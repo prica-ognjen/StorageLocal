@@ -14,6 +14,7 @@ import java.io.File;
 import java.io.FileWriter;
 import java.io.IOException;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
@@ -63,6 +64,7 @@ public class LocalUser extends user.User {
 
             initUserData(path, this);
             initConfig(path);
+
             return "success: Storage " + name + " initialized at: " + to;
         }
 
@@ -108,6 +110,17 @@ public class LocalUser extends user.User {
             boolean created = file.createNewFile();
             if(!created){
                 System.out.println(0);
+            }else{
+                FileWriter out = new FileWriter(file);
+                GsonBuilder gsonBuilder = new GsonBuilder();
+                gsonBuilder.setPrettyPrinting().registerTypeAdapter(Config.class, new ConfigSerializer());
+                Gson gson = gsonBuilder.create();
+
+                Config config = new Config(-1, -1, new ArrayList<>());
+
+                out.write(gson.toJson(config));
+
+                out.close();
             }
         } catch (IOException e) {
             e.printStackTrace();

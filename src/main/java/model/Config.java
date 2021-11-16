@@ -1,40 +1,42 @@
 package model;
 
-import java.util.List;
+import java.util.ArrayList;
 
 public class Config {
 
-    private int size;
-    private int fileLimit;
-    private List<String> exclExt;
+    private int sizeLimit;
+    private int fileNumLimit;
+    private ArrayList<String> blockedExtensions;
 
-    Config(int size, int fileLimit, List<String> exclExt) {
-        this.size = size;
-        this.fileLimit = fileLimit;
-        this.exclExt = exclExt;
+    Config(){}
+
+    Config(int sizeLimit, int fileNumLimit, ArrayList<String> blockedExtensions) {
+        this.sizeLimit = sizeLimit;
+        this.fileNumLimit = fileNumLimit;
+        this.blockedExtensions = blockedExtensions;
     }
 
-    public int getSize() {
-        return size;
+    public int getSizeLimit() {
+        return sizeLimit;
     }
 
-    public void setSize(int size) {
-        this.size = size;
+    public void setSizeLimit(int sizeLimit) {
+        this.sizeLimit = sizeLimit;
     }
 
-    public int getFileLimit() {
-        return fileLimit;
+    public int getFileNumLimit() {
+        return fileNumLimit;
     }
 
-    public void setFileLimit(int fileLimit) {
-        this.fileLimit = fileLimit;
+    public void setFileNumLimit(int fileNumLimit) {
+        this.fileNumLimit = fileNumLimit;
     }
 
-    public List<String> getExclExt() {
-        return exclExt;
+    public ArrayList<String> getBlockedExtensions() {
+        return blockedExtensions;
     }
 
-    public void setExclExt(List<String> exclExt) {
-        this.exclExt = exclExt;
+    public void setBlockedExtensions(ArrayList<String> blockedExtensions) {
+        this.blockedExtensions = blockedExtensions;
     }
 }

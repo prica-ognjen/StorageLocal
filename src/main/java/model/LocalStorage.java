@@ -4,7 +4,9 @@ package model;
 import storage.Storage;
 import user.User;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 
 public class LocalStorage extends Storage {
 
@@ -14,7 +16,10 @@ public class LocalStorage extends Storage {
 
     LocalStorage(String path, String name, User superuser) {
         super(path, name, superuser);
-        this.config = new Config(-1, -1, new ArrayList<>());
+        this.config = new Config();
+        this.config.setSizeLimit(-1);
+        this.config.setFileNumLimit( -1);
+        this.config.setBlockedExtensions(new ArrayList<>());
         this.users = new ArrayList<>();
     }
 
