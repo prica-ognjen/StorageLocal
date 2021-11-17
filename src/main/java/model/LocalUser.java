@@ -4,7 +4,6 @@ import com.google.gson.Gson;
 import com.google.gson.GsonBuilder;
 import exceptions.StorageInitException;
 import exceptions.UserTypeException;
-import storage.Storage;
 import user.Privilege;
 import user.User;
 import user.UserManager;
@@ -14,7 +13,6 @@ import java.io.File;
 import java.io.FileWriter;
 import java.io.IOException;
 import java.util.ArrayList;
-import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
@@ -27,51 +25,60 @@ public class LocalUser extends user.User {
     LocalUser(){}
     LocalUser(String username, String password, UserType type, Map<Privilege, Boolean> privileges){
         super(username, password, type, privileges);
-
     }
 
     @Override
-    public String initStorage(String path) throws Exception {
-
-        String[] split = path.split("\\\\");
-        StringBuilder stringBuilder = new StringBuilder();
-        String name = split[split.length-1];
-
-        for(int i = 0; i < split.length-1; i++){
-            stringBuilder.append(split[i]);
-            if(i != split.length-2)
-                stringBuilder.append("\\");
-
-        }
-
-        String to = stringBuilder.toString();
-
-        if (this.getType() == UserType.REGULAR || this.getType() == null) {
+    public void initStorage(String path){
+        if (this.getType() != UserType.SUPER || this.getType() == null) {
             throw new UserTypeException("User isn't admin");
         }
+
         File file = new File(path);
-        boolean ok = file.mkdirs();
+        boolean created = file.mkdir();
 
-        if(!ok){{
-
-            if(!checkIfStorageExists(path))
-                throw new StorageInitException("Couldn't initialize storage at " + path);
-            else
-                return "storage already exists";
-        }
-
+        if(!created){
+            if(checkIfStorageExists(path)) {
+               throw new StorageInitException("Storage " + file.getName() + " already exists at " + file.getParent());
+            }
+            else if(dirWithSameName(path)){
+                throw new StorageInitException("Folder with same name " + file.getName() + "that isn't a storage already exists at " + file.getParent());
+            }else{
+                throw new StorageInitException("Unexpected error occurred when creating a storage");
+            }
         }else{
-
             initUserData(path, this);
             initConfig(path);
-
-            return "success: Storage " + name + " initialized at: " + to;
         }
+    }
 
+    @Override
+    public String toString() {
+        return this.getUsername();
+    }
+
+    //private methods
+
+    private boolean dirWithSameName(String path) {
+        File f = new File(path).getParentFile();
+        File storage = new File(path);
+        File[] files = f.listFiles();
+        assert files != null;
+        for(File file: files){
+            if(file.getName().equals(storage.getName())){
+                return true;
+            }
+        }
+        return false;
     }
 
     private boolean checkIfStorageExists(String path) {
-
+        File f0 = new File(path);
+        if(!f0.exists()){
+            return false;
+        }
+        if(!f0.isDirectory()){
+            return false;
+        }
         File f1 = new File(path + "/userData.json");
         if(!f1.exists())
             return false;
@@ -85,18 +92,15 @@ public class LocalUser extends user.User {
         try {
             boolean created = file.createNewFile();
             if(!created){
-                System.out.println(0);
+                throw new StorageInitException("Unexpected error occurred when initializing userData.json");
             }else{
                 FileWriter out = new FileWriter(file);
                 GsonBuilder gsonBuilder = new GsonBuilder();
                 gsonBuilder.setPrettyPrinting().registerTypeAdapter(User.class, new UserSerializer());
                 Gson gson = gsonBuilder.create();
-
                 List<LocalUser> userList = new ArrayList<>();
                 userList.add(user);
-
                 out.write(gson.toJson(userList));
-
                 out.close();
             }
         } catch (IOException e) {
@@ -109,17 +113,14 @@ public class LocalUser extends user.User {
         try {
             boolean created = file.createNewFile();
             if(!created){
-                System.out.println(0);
+                throw new StorageInitException("Unexpected error occurred when initializing config.json");
             }else{
                 FileWriter out = new FileWriter(file);
                 GsonBuilder gsonBuilder = new GsonBuilder();
                 gsonBuilder.setPrettyPrinting().registerTypeAdapter(Config.class, new ConfigSerializer());
                 Gson gson = gsonBuilder.create();
-
                 Config config = new Config(-1, -1, new ArrayList<>());
-
                 out.write(gson.toJson(config));
-
                 out.close();
             }
         } catch (IOException e) {
@@ -127,8 +128,4 @@ public class LocalUser extends user.User {
         }
     }
 
-    @Override
-    public String toString() {
-        return this.getUsername();
-    }
 }

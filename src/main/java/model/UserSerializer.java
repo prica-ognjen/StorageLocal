@@ -1,8 +1,6 @@
 package model;
 
 import com.google.gson.*;
-import com.google.gson.reflect.TypeToken;
-import model.LocalUser;
 import user.Privilege;
 import user.User;
 import user.UserType;

@@ -1,7 +1,12 @@
 package exceptions;
 
-public class ConnectionException extends Exception {
-    public ConnectionException(String s) {
-        super(s);
+public class ConnectionException extends RuntimeException {
+
+    public ConnectionException() {
     }
+
+    public ConnectionException(String reason) {
+        super(reason);
+    }
+
 }

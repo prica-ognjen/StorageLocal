@@ -7,16 +7,14 @@ import com.google.gson.stream.JsonReader;
 import exceptions.AuthException;
 import exceptions.ConnectionException;
 import storage.Storage;
+import user.FileType;
 import user.Privilege;
 import user.User;
 import user.UserType;
 
 import java.io.*;
-import java.lang.reflect.Array;
 import java.lang.reflect.Type;
 import java.nio.file.Files;
-import java.nio.file.Path;
-import java.nio.file.Paths;
 import java.util.*;
 
 public class Connection implements connection.Connection {
@@ -26,59 +24,43 @@ public class Connection implements connection.Connection {
     private String currDir;
 
     @Override
-    public Storage connectToStorage(String s, String s1, String s2) throws Exception{
+    public Storage connect(String dest, String username, String password) {
 
-        String[] split = s.split("\\\\");
-        StringBuilder stringBuilder = new StringBuilder();
-        String name = split[split.length-1];
+        //dest je ceo path za storage
 
-        for(int i = 0; i < split.length-1; i++){
-            stringBuilder.append(split[i]);
-            if(i != split.length-2)
-                stringBuilder.append("\\");
+        File root = new File(dest);
+        String name = root.getName();
+        String path = root.getParent();
 
-        }
-
-        String to = stringBuilder.toString();
-
-        File root = new File(s);
-        if(root.exists() && !root.isDirectory()){
-            System.out.println("root isn't directory");
+        if(!checkIfStorageValid(root)){
             return null;
         }
-        File userData = new File(s + "/userData.json");
-        if(!userData.exists() || userData.isDirectory()){
-            System.out.println("userData doesn't exist or its a directory");
-            return null;
-        }
-        File config = new File(s + "/config.json");
-        if(!config.exists() || config.isDirectory()){
-            System.out.println("config doesn't exist or its a directory");
-            return null;
-        }
+
+        File userData = new File(root.getPath() + "/userData.json");
+        File config = new File(root.getPath() + "/config.json");
 
         GsonBuilder gsonBuilder = new GsonBuilder();
         Gson gson = gsonBuilder.registerTypeAdapter(Config.class, new ConfigSerializer()).create();
 
         List<LocalUser> userList = new ArrayList<>();
-        Config config1 = null;
+        Config configJSON = null;
 
         try {
             JsonReader reader = new JsonReader(new FileReader(userData));
-            Type type = new TypeToken<ArrayList<LocalUser>>() {}.getType();
-
-            userList= gson.fromJson(reader, type);
-
-            if(userList.isEmpty()){
-                System.out.println("storage wasn't initialized so there are no users");
-                return null;
+            Type type = new TypeToken<ArrayList<LocalUser>>() {
+            }.getType();
+            userList = gson.fromJson(reader, type);
+            if (userList.isEmpty()) {
+                throw new ConnectionException("Storage was not properly initialized. UserData.json isn't properly initialized.");
             }
 
             reader = new JsonReader(new FileReader(config));
-            type = new TypeToken<Config>(){}.getType();
-
-            config1 = gson.fromJson(reader, type);
-
+            type = new TypeToken<Config>() {
+            }.getType();
+            configJSON = gson.fromJson(reader, type);
+            if (configJSON == null) {
+                throw new ConnectionException("Storage was not properly initialized. Config.json isn't properly initialized.");
+            }
 
         } catch (FileNotFoundException e) {
             e.printStackTrace();
@@ -87,541 +69,214 @@ public class Connection implements connection.Connection {
         //dir exists
         //userData exists and isn't empty
         //config exists
-
-        LocalUser user = loginUser(s, s1, s2);
-
+        LocalUser user = loginUser(dest, username, password);
         //auth successful
-
-        getStorageConnection(to, name, userList, config1, user);
+        getStorageConnection(path, name, userList, configJSON, user);
         connOn = true;
-        currDir = to+"\\"+name;
+        currDir = path + "/" + name;
         return storage;
     }
 
-    private void getStorageConnection(String to, String name, List<LocalUser> userList, Config config, LocalUser user) throws Exception {
-
-        LocalStorage s =  new LocalStorage(to, name, userList.get(0));
-        s.setConfig(config);
-        s.setUsers(userList);
-
-        if(s.getCurrUser() != null){
-            throw new ConnectionException("Another user is currently connected.");
-        }
-
-        s.setCurrUser(user);
-        storage = s;
+    @Override
+    public Storage connect(String s, User user) {
+        return connect(s, user.getUsername(), user.getPassword());
     }
 
     @Override
-    public Storage connectToStorage(String s, User user) throws Exception{
-        return connectToStorage(s, user.getUsername(), user.getPassword());
-    }
-
-    @Override
-    public String closeConnection() throws Exception {
-
-        if(!connOn){
-            return "fail: there is no active connection";
+    public void close() {
+        try {
+            testConnection();
+        } catch (ConnectionException e) {
+            e.printStackTrace();
         }
-
-        String name = this.storage.getName();
-
         this.connOn = false;
         this.storage = null;
-
-        return "success: connection to : " + name + "is terminated";
     }
 
     @Override
-    public String closeConnectionToUser() throws Exception {
-        if(!connOn){
-            return "fail: there is no active connection";
+    public void closeForUser() {
+        try {
+            testConnection();
+        } catch (ConnectionException e) {
+            e.printStackTrace();
         }
-
-        String name = this.storage.getName();
-
         this.connOn = false;
-        return "success: " + storage.getCurrUser() + " disconnected";
     }
 
+
     @Override
-    public String addUser(String username, String password, String type) throws Exception {
-
-        if(!connOn){
-            return "fail: there is no active connection";
+    public boolean addUser(String username, String password, UserType type) {
+        try {
+            testConnection();
+            testSuperUser();
+            testSuperAdd(type);
+            testUsername(username);
+            testUserTypeError(type);
+        } catch (ConnectionException e) {
+            e.printStackTrace();
+            return false;
         }
-
-        if(!storage.getCurrUser().getType().equals(UserType.SUPER)){
-            return "fail: user doesn't have superuser privileges";
-        }
-
-        if(type.equals("super")){
-            //regulate exceptions
-            return "fail: superuser can only create regular users";
-        }
-
-        if(findUser(username) != null){
-            return "fail: username taken";
-        }
-
-        //type mora reg da bude!
 
         List<LocalUser> tempUsers = getUserData();
 
         Map<Privilege, Boolean> map = new HashMap<>();
 
-        map.put(Privilege.MOV, false);
-        map.put(Privilege.ADD, false);
         map.put(Privilege.VIEW, false);
+        map.put(Privilege.ADD, false);
         map.put(Privilege.DWN, false);
+        map.put(Privilege.MOV, false);
         map.put(Privilege.DEL, false);
 
-        LocalUser u = new LocalUser(username, password, UserType.REGULAR, map);
+        LocalUser u = new LocalUser(username, password, type, map);
 
         tempUsers.add(u);
-        String s = saveUserData(tempUsers);
-
-        if(s.contains("success")){
-            return "success: user: " + u + " added to storage: " + storage;
-        }
-
-       return "fail: something went wrong with adding a new user.";
+        saveUserData(tempUsers);
+        return true;
     }
 
     @Override
-    public String delUser(String s) throws Exception {
+    public boolean delUser(String username) {
 
-        if(!connOn){
-            return "fail: there is no active connection";
-        }
-
-        if(!storage.getCurrUser().getType().equals(UserType.SUPER)){
-            return "fail: user doesn't have superuser privileges";
-        }
-
-        if(findUser(s) == null){
-            return "fail: there is no user with this username";
-        }else if(Objects.requireNonNull(findUser(s)).getUsername().equals(storage.getCurrUser().getUsername())){
-            return "fail: superuser cannot delete itself";
+        try {
+            testConnection();
+            testSuperUser();
+            testUsernameNotFound(username);
+            testSuperSelfDel(username);
+        } catch (ConnectionException e) {
+            e.printStackTrace();
+            return false;
         }
 
         List<LocalUser> tempUsers = getUserData();
-        LocalUser toDel=null;
+        LocalUser toDel = null;
 
-        for(LocalUser u: tempUsers){
-            if(u.getUsername().equals(s)){
+        for (LocalUser u : tempUsers) {
+            if (u.getUsername().equals(username)) {
                 toDel = u;
                 break;
             }
         }
-
         tempUsers.remove(toDel);
-
-        String save = saveUserData(tempUsers);
-
-        if(save.contains("success")){
-            return "success: user: " + toDel + " removed from storage: " + storage;
-        }
-
-        return "fail: something went wrong with deleting a user.";
-
+        saveUserData(tempUsers);
+        return true;
     }
 
     @Override
-    public String addPrivilege(String s, Privilege privilege) throws Exception {
-        //create hierarchy
-        //DEL,ADD,VIEW,DWN,MOV
-        //VIEW,DWN,MOV,ADD,DEL -> mislim da je ovako ok
+    public boolean addPrivilege(String username, Privilege privilege) {
+        //VIEW,Add,Dwn,mov,DEL -> mislim da je ovako ok
 
-        if(!connOn){
-            return "fail: there is no active connection";
+        try {
+            testConnection();
+            testSuperUser();
+            testUsernameNotFound(username);
+            checkIfArgIsNull(privilege);
+            testUserForPrivilege(privilege, username);
+        } catch (ConnectionException e) {
+            e.printStackTrace();
+            return false;
         }
 
-        if(!storage.getCurrUser().getType().equals(UserType.SUPER)){
-            return "fail: user doesn't have superuser privileges";
-        }
-        LocalUser tUser = findUser(s);
-
-        if(tUser == null){
-            return "fail: there is no user with this username";
-        }
-
-        if(privilege == null){
-            return "privilege you've entered is null";
-        }
-
-        if(tUser.getPrivileges().get(privilege)){
-            return "fail: user already has this privilege";
-        }
-
+        //proveri da li vazi hijerarhija privilegija
         List<LocalUser> tempUsers = getUserData();
-        LocalUser tempU = null;
 
-        for(LocalUser u: tempUsers){
-            if(u.getUsername().equals(s)){
-                tempU = u;
+        for (LocalUser u : tempUsers) {
+            if (u.getUsername().equals(username)) {
                 u.getPrivileges().put(privilege, true);
                 break;
             }
         }
-
-        String save = saveUserData(tempUsers);
-
-        if(save.contains("success")){
-            return "success: added privilege: " + privilege.name() + " to user: " + tempU;
-        }
-
-        return "fail: something went wrong with adding a privilege.";
+        saveUserData(tempUsers);
+        return true;
     }
 
     @Override
-    public String delPrivilege(String s, Privilege privilege) throws Exception {
-        if(!connOn){
-            return "fail: there is no active connection";
+    public boolean delPrivilege(String username, Privilege privilege) {
+        try {
+            testConnection();
+            testSuperUser();
+            testUsernameNotFound(username);
+            checkIfArgIsNull(privilege);
+            testUserForPrivilege(privilege, username);
+        } catch (ConnectionException e) {
+            e.printStackTrace();
+            return false;
         }
 
-        if(!storage.getCurrUser().getType().equals(UserType.SUPER)){
-            return "fail: user doesn't have superuser privileges";
-        }
+        LocalUser tUser = findUser(username);
 
-        LocalUser tUser = findUser(s);
-
-        if(tUser == null){
-            return "fail: there is no user with this username";
-        }
-
-        if(privilege == null){
-            return "privilege you've entered is null";
-        }
-
-        if(!tUser.getPrivileges().get(privilege)){
-            return "fail: user doesn't have this privilege";
-        }
-
+        assert tUser != null;
         List<LocalUser> tempUsers = getUserData();
-        LocalUser tempU = null;
 
-        for(LocalUser u: tempUsers){
-            if(u.getUsername().equals(s)){
-                tempU = u;
+        for (LocalUser u : tempUsers) {
+            if (u.getUsername().equals(username)) {
                 u.getPrivileges().put(privilege, false);
                 break;
             }
         }
-
-        String save = saveUserData(tempUsers);
-
-        if(save.contains("success")){
-            return "success: removed privilege: " + privilege.name() + " to user: " + tempU;
-        }
-
-        return "fail: something went wrong with removing a privilege.";
+        saveUserData(tempUsers);
+        return true;
     }
 
     @Override
-    @SuppressWarnings("unchecked")
-    public String createFile(String name, String path) {
-
-        if(!connOn){
-            return "fail: there is no active connection";
-        }
-
-        File file = new File(currDir+"\\"+path+"\\"+name);
-
-        if(file.exists()){
-            return "fail: file already exists.";
-        }
-        int size = 0;
-        if((size + getFileSize(new File(storage.getPath()+"\\"+storage.getName())) > (Integer)storage.getConfig().getSizeLimit()) && (Integer)storage.getConfig().getSizeLimit() == -1){
-            return "fail: file too large";
-        }
-
-        if((getFileNumber(new File(storage.getPath()+"\\"+storage.getName())) + 1 > (Integer)storage.getConfig().getFileNumLimit()) && (Integer)storage.getConfig().getFileNumLimit() != 1){
-            System.out.println(getFileNumber(new File(storage.getPath()+"\\"+storage.getName())));
-            return "fail: File number limit exceeded";
-        }
-
-        String extension = name.split("\\.")[1];
-
-        if(storage.getConfig().getBlockedExtensions().contains(extension)){
-            return "fail: Extension " +extension+ " not supported";
-        }
-
-        for(String s: storage.getConfig().getBlockedExtensions()){
-            if(s.equals(extension)){
-                return "fail: cannot create file with that extension as it is blocked by the storage";
-            }
-        }
+    public boolean mk(String name, FileType type) {
 
         try {
-            boolean created = file.createNewFile();
+            testConnection();
+            testPrivilege("add");
+            testBlockedExtensions(name);
+            testFileNum();
+            testStorageSize(currDir + "/" + name);
+            testIfFileExists(currDir + "/" + name);
+        } catch (ConnectionException e) {
+            e.printStackTrace();
+            return false;
+        }
 
-            if(!created){
-                return "fail: error with creating a file";
-            }else{
-                return "success: file created";
+        File file = new File(currDir + "/" + name);
+
+        try {
+            boolean created;
+            if (type == FileType.FILE) {
+                created = file.createNewFile();
+            } else {
+                created = file.mkdir();
             }
 
+            if (!created) {
+                unknownError();
+            }
         } catch (IOException e) {
             e.printStackTrace();
         }
-
-        return null;
+        return true;
     }
 
-
     @Override
-    public String createFile(String name) {
-
-        if(!connOn){
-            return "fail: there is no active connection";
-        }
-
-        if(!privilegeCheck(storage.getCurrUser(), "add")){
-            return "fail: user doesn't have create privilege";
-        }
-
-        File file = new File(currDir+"\\"+name);
-
-        if(file.exists()){
-            return "fail: file already exists.";
-        }
-        String extension = "";
-        if(name.contains("\\.")){
-            extension = name.split("\\.")[1];
-        }
-
-        int size = 0;
-
-        if((size + getFileSize(new File(storage.getPath()+"\\"+storage.getName())) > (Integer)storage.getConfig().getSizeLimit() && (Integer)storage.getConfig().getSizeLimit() == -1)){
-            return "fail: file too large";
-        }
-
-        if((getFileNumber(new File(storage.getPath()+"\\"+storage.getName())) + 1 > (Integer)storage.getConfig().getFileNumLimit() && (Integer)storage.getConfig().getFileNumLimit() != 1)){
-            System.out.println(getFileNumber(new File(storage.getPath()+"\\"+storage.getName())));
-            return "fail: File number limit exceeded";
-        }
-        if(storage.getConfig().getBlockedExtensions().contains(extension)){
-            return "fail: Extension " +extension+ " not supported";
-        }
-        if(name.contains("sizeTest")) {
-
-            try {
-                BufferedWriter out = new BufferedWriter(new FileWriter(file));
-
-                out.write(testSize(size));
-                out.close();
-
-            } catch (IOException e) {
-                e.printStackTrace();
-            }
-
-        }
+    public boolean rm(String name) {
         try {
-            boolean created = file.createNewFile();
-
-            if(!created && !name.contains("sizeTest")){
-                return "fail: error with creating a file";
-            }else{
-                return "success: file created";
-            }
-
-        } catch (IOException e) {
+            testConnection();
+            testPrivilege("del");
+        } catch (ConnectionException e) {
             e.printStackTrace();
+            return false;
         }
 
-        return null;
-    }
+        File file = new File(currDir + "/" + name);
 
-    private String testSize(int bytes){
-
-        StringBuilder stringBuilder = new StringBuilder();
-
-        for(int i = 0; i < bytes; i++){
-            stringBuilder.append(i%10);
+        if (!deleteDirectory(file)) {
+            unknownError();
         }
-
-        return stringBuilder.toString();
-
+        return true;
     }
 
     @Override
-    public String createDir(String name, String path) {
-
-        if(!connOn){
-            return "fail: there is no active connection";
-        }
-
-        if(!privilegeCheck(storage.getCurrUser(), "add")){
-            return "fail: user doesn't have create privilege";
-        }
-
-        File file = new File(currDir+"\\"+path + "\\" + name);
-
-        if(file.exists()){
-            return "fail: file already exists.";
-        }
-
-        boolean created = file.mkdir();
-
-        if(!created){
-            return "fail: error with creating a directory";
-        }else{
-            return "success: directory created";
-        }
-    }
-
-    @Override
-    public String createDir(String name) {
-
-        if(!connOn){
-            return "fail: there is no active connection";
-        }
-
-        if(!privilegeCheck(storage.getCurrUser(), "add")){
-            return "fail: user doesn't have create privilege";
-        }
-
-        File file = new File(currDir+"\\"+name);
-
-        if(file.exists()){
-            return "fail: file already exists.";
-        }
-
-        boolean created = file.mkdir();
-
-        if(!created){
-            return "fail: error with creating a directory";
-        }else{
-            return "success: directory created";
-        }
-
-    }
-
-    @Override
-    public String delFile(String name) {
-
-        if(!connOn){
-            return "fail: there is no active connection";
-        }
-
-        if(!privilegeCheck(storage.getCurrUser(), "del")){
-            return "fail: user doesn't have delete privilege";
-        }
-
-        File file = new File(currDir+"\\"+name);
-
-        if(!file.exists()){
-            return "fail: file doesn't exists.";
-        }
-
-        boolean deleted = file.delete();
-
-        if(!deleted){
-            return "fail: error with deleting a file";
-        }else{
-            return "success: file deleted";
-        }
-
-    }
-
-    @Override
-    public String delFile(String name, String path) {
-
-        if(!connOn){
-            return "fail: there is no active connection";
-        }
-
-        if(!privilegeCheck(storage.getCurrUser(), "del")){
-            return "fail: user doesn't have delete privilege";
-        }
-
-        File file = new File(currDir+"\\"+path+"\\"+name);
-
-        if(!file.exists()){
-            return "fail: file doesn't exists.";
-        }
-
-        boolean deleted = file.delete();
-
-        if(!deleted){
-            return "fail: error with deleting a file";
-        }else{
-            return "success: file deleted";
-        }
-    }
-
-    @Override
-    public String delDir(String name) {
-        if(!connOn){
-            return "fail: there is no active connection";
-        }
-
-        if(!privilegeCheck(storage.getCurrUser(), "del")){
-            return "fail: user doesn't have delete privilege";
-        }
-
-        File file = new File(currDir+"\\"+name);
-
-        if(!deleteDirectory(file)){
-            return "fail: there was a problem with deleting the directory";
-        }
-
-        return "success: directory deleted";
-    }
-
-    @Override
-    public String delDir(String name, String path) {
-        if(!connOn){
-            return "fail: there is no active connection";
-        }
-
-        if(!privilegeCheck(storage.getCurrUser(), "del")){
-            return "fail: user doesn't have delete privilege";
-        }
-
-        File file = new File(currDir+"\\"+path+"\\"+name);
-
-        if(!deleteDirectory(file)){
-            return "fail: there was a problem with deleting the directory";
-        }
-
-        return "success: directory deleted";
-    }
-
-    @Override
-    public List<String> listDir(String name) throws Exception{
-
-        if(!connOn){
+    public List<String> ls(){
+        try {
+            testConnection();
+            testPrivilege("view");
+        } catch (ConnectionException e) {
+            e.printStackTrace();
             return null;
-        }
-
-        if(!privilegeCheck(storage.getCurrUser(), "view")){
-            throw new Exception("fail: user doesn't have view privilege");
-        }
-
-        File f = new File(currDir+"\\"+name);
-
-        File[] allContents = f.listFiles();
-
-        List<String> list = new ArrayList<>();
-
-        assert allContents != null;
-        for(File file: allContents){
-            list.add(file.getName());
-        }
-
-        return list;
-    }
-
-    @Override
-    public List<String> listDir() throws Exception {
-        if(!connOn){
-            return null;
-        }
-
-        if(!privilegeCheck(storage.getCurrUser(), "view")){
-            throw new Exception("fail: user doesn't have view privilege");
         }
 
         File f = new File(currDir);
@@ -631,7 +286,7 @@ public class Connection implements connection.Connection {
         List<String> list = new ArrayList<>();
 
         assert allContents != null;
-        for(File file: allContents){
+        for (File file : allContents) {
             list.add(file.getName());
         }
 
@@ -639,184 +294,310 @@ public class Connection implements connection.Connection {
     }
 
     @Override
-    public String movFile(String name, String to) throws Exception{
-
-        if(!connOn){
-            return "fail: there is no active connection";
+    public List<String> lsFiles(String s) {
+        try {
+            testConnection();
+            testPrivilege("view");
+        } catch (ConnectionException e) {
+            e.printStackTrace();
+            return null;
         }
 
-        if(!privilegeCheck(storage.getCurrUser(), "mov")){
-            throw new Exception("fail: user doesn't have move privilege");
+        File f = new File(currDir);
+
+        File[] allContents = f.listFiles();
+
+        List<String> list = new ArrayList<>();
+
+        assert allContents != null;
+        for (File file : allContents) {
+            if(!file.isDirectory())
+                list.add(file.getName());
         }
 
-        File f = new File(currDir+"\\"+name);
-
-        Path source = Paths.get(f.getPath());
-        Path target = Paths.get(currDir+"\\"+to+"\\"+f.getName());
-
-        Files.move(source, target);
-
-        return "success: file moved";
+        return list;
     }
 
     @Override
-    public String movDir(String name, String to) throws Exception{
-
-        if(!connOn){
-            return "fail: there is no active connection";
+    public List<String> lsDirs(String s) {
+        try {
+            testConnection();
+            testPrivilege("view");
+        } catch (ConnectionException e) {
+            e.printStackTrace();
+            return null;
         }
-        if(!privilegeCheck(storage.getCurrUser(), "mov")){
-            throw new Exception("fail: user doesn't have move privilege");
+
+        File f = new File(currDir);
+
+        File[] allContents = f.listFiles();
+
+        List<String> list = new ArrayList<>();
+
+        assert allContents != null;
+        for (File file : allContents) {
+            if(file.isDirectory())
+                list.add(file.getName());
         }
-        File f = new File(currDir+"\\"+name);
 
-        File dest = new File(currDir+"\\"+to+"\\"+name);
-        boolean createdDir = dest.mkdir();
-
-        if(createdDir) {
-            boolean moved = moveDirectory(f, dest);
-
-            if(moved){
-                return "success: moved directory to new location";
-            }
-        }
-        return "fail: couldn't move directory";
-
+        return list;
     }
 
     @Override
-    public String downloadFile(String name, String to) throws Exception{
-
-        if(!connOn){
-            return "fail: there is no active connection";
+    public List<String> lsExt(String s) {
+        try {
+            testConnection();
+            testPrivilege("view");
+        } catch (ConnectionException e) {
+            e.printStackTrace();
+            return null;
         }
 
-        if(!privilegeCheck(storage.getCurrUser(), "dwn")){
-            throw new Exception("fail: user doesn't have download privilege");
+        File f = new File(currDir);
+
+        File[] allContents = f.listFiles();
+
+        List<String> list = new ArrayList<>();
+
+        assert allContents != null;
+        for (File file : allContents) {
+            if(file.getName().contains("."))
+                if(file.getName().split("\\.")[1].equals(s))
+                    list.add(file.getName());
         }
 
-        File f = new File(currDir+"\\"+name);
-        File dest = null;
-        if(f.isDirectory()){
-            dest = new File(to+"\\"+name);
-        }else{
-            dest = new File(to+"\\"+f.getName());
+        return list;
+    }
+
+    @Override
+    public List<String> lsDateCreated(String s) {
+        try {
+            testConnection();
+            testPrivilege("view");
+        } catch (ConnectionException e) {
+            e.printStackTrace();
+            return null;
+        }
+
+        File f = new File(currDir);
+
+        File[] allContents = f.listFiles();
+
+        List<String> list = new ArrayList<>();
+
+        assert allContents != null;
+        Arrays.sort(allContents, Comparator.comparingLong(File::lastModified).reversed());
+
+        for (File file : allContents) {
+            list.add(file.getName());
+        }
+
+        return list;
+    }
+
+    @Override
+    public List<String> lsDateModified(String s) {
+        return null;
+    }
+
+    @Override
+    @SuppressWarnings("all")
+    public boolean movFile(String name, String to) {
+
+        try {
+            testConnection();
+            testPrivilege("mov");
+        } catch (ConnectionException e) {
+            e.printStackTrace();
+            return false;
+        }
+
+        File f = new File(currDir + "/" + name);
+        File dest;
+
+        if (to.equals(storage.getName())) {
+            dest = new File(currDir + "/" + f.getName());
+        } else {
+            dest = new File(currDir + "/" + to + "/" + name);
+        }
+
+        if (f.isDirectory())
+            dest.mkdir();
+
+        if (!moveDirectory(f, dest)) {
+            unknownError();
+        }
+        return true;
+    }
+
+    @Override
+    public boolean dwnFile(String name, String to) {
+
+        try {
+            testConnection();
+            testPrivilege("dwn");
+        } catch (ConnectionException e) {
+            e.printStackTrace();
+            return false;
+        }
+
+        File f = new File(currDir + "/" + name);
+        File dest;
+        if (f.isDirectory()) {
+            dest = new File(to + "/" + name);
+        } else {
+            dest = new File(to + "/" + f.getName());
         }
 
         boolean createdDir = false;
 
-        if(f.isDirectory()) {
+        if (f.isDirectory()) {
             createdDir = dest.mkdir();
-        }
-        else{
+        } else {
             try {
                 boolean copied = copyDirectory(f, dest);
-                if(copied){
-                    return "success: downloaded file to new location";
-                }else{
-                    return "fail: couldn't download to file to wanted location";
+                if (!copied) {
+                    unknownError();
                 }
             } catch (IOException e) {
                 e.printStackTrace();
             }
         }
-        if(createdDir) {
-            boolean copied = false;
+        if (createdDir) {
+            boolean copied;
             try {
                 copied = copyDirectory(f, dest);
+                if (!copied) {
+                    unknownError();
+                }
             } catch (IOException e) {
                 e.printStackTrace();
             }
-
-            if(copied){
-                return "success: downloaded directory to new location";
-            }
         }
-        return "fail: couldn't download directory";
+        return true;
     }
 
     @Override
-    public String limitStorageSize(String s, int i) throws Exception {
-        if(!connOn){
-            return "fail: there is no active connection";
-        }
-        if(!storage.getCurrUser().getType().equals(UserType.SUPER)){
-            return "fail: user doesn't have superuser privileges";
-        }
-
-        File f = new File(s);
-
-        if(getFileSize(f) > i){
-            return "fail: cannot limit storage size because it's currently larger than the provided limit";
+    public boolean limitSize(int i) {
+        try {
+            testConnection();
+            testSuperUser();
+            isLimitLow(storage.getPath(), i);
+        } catch (ConnectionException e) {
+            e.printStackTrace();
+            return false;
         }
 
         storage.getConfig().setSizeLimit(i);
-
         Config config = storage.getConfig();
-
-        if(saveConfig(config).contains("success")){
-            return "success: updated config.json";
-        }else{
-            return "fail: something went wrong when saving config.json";
-        }
+        saveConfig(config);
+        return true;
     }
 
     @Override
-    public String limitFileNumber(String s, int i) throws Exception {
-        if(!connOn){
-            return "fail: there is no active connection";
+    public boolean limitSize(String s, int i) {
+        try {
+            testConnection();
+            testSuperUser();
+            isLimitLow(s, i);
+        } catch (ConnectionException e) {
+            e.printStackTrace();
+            return false;
         }
-        if(!storage.getCurrUser().getType().equals(UserType.SUPER)){
-            return "fail: user doesn't have superuser privileges";
+
+        storage.getConfig().setSizeLimit(i);
+        Config config = storage.getConfig();
+        saveConfig(config);
+        return true;
+    }
+
+    @Override
+    public boolean limitFileNum(int i) {
+        try {
+            testConnection();
+            testSuperUser();
+        } catch (ConnectionException e) {
+            e.printStackTrace();
+            return false;
         }
 
         storage.getConfig().setFileNumLimit(i);
         Config config = storage.getConfig();
-        if(saveConfig(config).contains("success")){
-            return "success: updated config.json";
-        }else{
-            return "fail: something went wrong when saving config.json";
-        }
+        saveConfig(config);
+        return true;
     }
 
     @Override
-    @SuppressWarnings("unchecked")
-    public String blockExtForStorage(String s, String s1) throws Exception {
-        if(!connOn){
-            return "fail: there is no active connection";
+    public boolean limitFileNum(String s, int i) {
+        //ovo treba za neki odredjeni dir
+        try {
+            testConnection();
+            testSuperUser();
+        } catch (ConnectionException e) {
+            e.printStackTrace();
+            return false;
         }
-        if(!storage.getCurrUser().getType().equals(UserType.SUPER)){
-            return "fail: user doesn't have superuser privileges";
+
+        storage.getConfig().setFileNumLimit(i);
+        Config config = storage.getConfig();
+        saveConfig(config);
+        return true;
+    }
+
+    @Override
+    public boolean blockExt(String s) {
+        try {
+            testConnection();
+            testSuperUser();
+        } catch (ConnectionException e) {
+            e.printStackTrace();
+            return false;
+        }
+
+        storage.getConfig().getBlockedExtensions().add(s);
+        storage.getConfig().setBlockedExtensions(storage.getConfig().getBlockedExtensions());
+        Config config = storage.getConfig();
+        saveConfig(config);
+        return true;
+    }
+
+    @Override
+    public boolean blockExt(String s, String s1) {
+        //ovo treba za neki odredjeni dir
+        try {
+            testConnection();
+            testSuperUser();
+        } catch (ConnectionException e) {
+            e.printStackTrace();
+            return false;
         }
 
         storage.getConfig().getBlockedExtensions().add(s1);
-
         storage.getConfig().setBlockedExtensions(storage.getConfig().getBlockedExtensions());
         Config config = storage.getConfig();
-        if(saveConfig(config).contains("success")){
-            return "success: updated config.json";
-        }else{
-            return "fail: something went wrong when saving config.json";
-        }
+        saveConfig(config);
+        return true;
     }
+
+    //private methods
 
     private LocalUser findUser(String name) {
 
         List<LocalUser> tempUsers = getUserData();
-        for(LocalUser u: tempUsers){
-            if(u.getUsername().equals(name)){
+        for (LocalUser u : tempUsers) {
+            if (u.getUsername().equals(name)) {
                 return u;
             }
         }
         return null;
     }
 
-    private String saveConfig(Config config) {
-        File file = new File(storage.getPath()+"/"+storage.getName() + "/config.json");
+    private void saveConfig(Config config) {
+        File file = new File(storage.getPath() + "/" + storage.getName() + "/config.json");
         try {
-            if(!file.exists()){
-                return "fail: config doesn't exist.";
-            }else{
+            if (!file.exists()) {
+                throw new ConnectionException("Config doesn't exist");
+            } else {
                 FileWriter out = new FileWriter(file);
                 GsonBuilder gsonBuilder = new GsonBuilder();
                 gsonBuilder.setPrettyPrinting();
@@ -827,15 +608,14 @@ public class Connection implements connection.Connection {
         } catch (IOException e) {
             e.printStackTrace();
         }
-        return "success: config updated.";
     }
 
-    private String saveUserData(List<LocalUser> tempUsers) {
-        File file = new File(storage.getPath()+"/"+storage.getName() + "/userData.json");
+    private void saveUserData(List<LocalUser> tempUsers) {
+        File file = new File(storage.getPath() + "/" + storage.getName() + "/userData.json");
         try {
-            if(!file.exists()){
-                return "fail: userData doesn't exist.";
-            }else{
+            if (!file.exists()) {
+                throw new ConnectionException("UserData doesn't exist");
+            } else {
                 FileWriter out = new FileWriter(file);
                 GsonBuilder gsonBuilder = new GsonBuilder();
                 gsonBuilder.setPrettyPrinting().registerTypeAdapter(User.class, new UserSerializer());
@@ -846,18 +626,18 @@ public class Connection implements connection.Connection {
         } catch (IOException e) {
             e.printStackTrace();
         }
-        return "success: userData updated.";
     }
 
     private List<LocalUser> getUserData() {
 
         GsonBuilder gsonBuilder = new GsonBuilder();
         Gson gson = gsonBuilder.registerTypeAdapter(User.class, new UserSerializer()).create();
-        File file = new File(storage.getPath()+"/"+storage.getName()+ "/userData.json");
+        File file = new File(storage.getPath() + "/" + storage.getName() + "/userData.json");
         List<LocalUser> userList = new ArrayList<>();
         try {
             JsonReader reader = new JsonReader(new FileReader(file));
-            Type type = new TypeToken<List<User>>() {}.getType();
+            Type type = new TypeToken<List<User>>() {
+            }.getType();
 
             userList = gson.fromJson(reader, type);
             reader.close();
@@ -870,20 +650,58 @@ public class Connection implements connection.Connection {
 
     }
 
-    public LocalUser loginUser(String path, String username, String password) throws Exception{
+    private LocalUser loginUser(String path, String username, String password) {
         LocalUser check = authUser(path, username, password);
-        if(check != null){
+        if (check != null) {
             return check;
-        }else{
-            throw new AuthException("Failed to authenticate user " + username + ". Please check if the username or password is correct.");
+        } else {
+            try{
+                failedAuth();
+            }catch (ConnectionException e){
+                e.printStackTrace();
+            }
         }
+        return null;
+    }
+    @SuppressWarnings("all")
+    private boolean checkIfStorageValid(File root) {
+
+        if (root.exists() && !root.isDirectory()) {
+            return false;
+        }
+        File userData = new File(root.getPath() + "/userData.json");
+        if (!userData.exists() || userData.isDirectory()) {
+            return false;
+        }
+        File config = new File(root.getPath() + "/config.json");
+        if (!config.exists() || config.isDirectory()) {
+            return false;
+        }
+        return true;
+    }
+
+    private void getStorageConnection(String to, String name, List<LocalUser> userList, Config config, LocalUser user) {
+
+        LocalStorage s = new LocalStorage(to, name, userList.get(0));
+        s.setConfig(config);
+        s.setUsers(userList);
+
+        if (s.getCurrUser() != null) {
+            try {
+                takenConn();
+            }catch (ConnectionException e){
+                e.printStackTrace();
+            }
+        }
+
+        s.setCurrUser(user);
+        storage = s;
     }
 
     private LocalUser authUser(String path, String username, String password) {
 
-        if(!authDir(path)){
-            System.out.println("dir doesn't exist");
-            return null;
+        if (!authDir(path)) {
+            throw new ConnectionException("Storage doesn't exist");
         }
 
         GsonBuilder gsonBuilder = new GsonBuilder();
@@ -892,13 +710,14 @@ public class Connection implements connection.Connection {
         LocalUser check = null;
         try {
             JsonReader reader = new JsonReader(new FileReader(file));
-            Type type = new TypeToken<List<User>>() {}.getType();
+            Type type = new TypeToken<List<User>>() {
+            }.getType();
 
             List<LocalUser> userList = gson.fromJson(reader, type);
 
-            for (LocalUser u: userList){
-                if(u.getUsername().equals(username)){
-                    if(u.getPassword().equals(password)){
+            for (LocalUser u : userList) {
+                if (u.getUsername().equals(username)) {
+                    if (u.getPassword().equals(password)) {
                         check = u;
                     }
                 }
@@ -911,41 +730,32 @@ public class Connection implements connection.Connection {
     }
 
     private boolean authDir(String path) {
-
         File file = new File(path);
-
         return file.exists() && file.isDirectory();
     }
 
     private boolean privilegeCheck(User currUser, String code) {
 
-        if(code.equals("add")){
+        boolean b = true;
 
-            return currUser.getPrivileges().get(Privilege.ADD);
-
+        if (code.equals("add")) {
+            b = currUser.getPrivileges().get(Privilege.ADD);
         }
-        if(code.equals("del")){
-
-            return currUser.getPrivileges().get(Privilege.DEL);
-
+        if (code.equals("del")) {
+            b = currUser.getPrivileges().get(Privilege.DEL);
         }
-        if(code.equals("view")){
-
-            return currUser.getPrivileges().get(Privilege.VIEW);
-
+        if (code.equals("view")) {
+            b = currUser.getPrivileges().get(Privilege.VIEW);
         }
-        if(code.equals("mov")){
-
-            return currUser.getPrivileges().get(Privilege.MOV);
-
+        if (code.equals("mov")) {
+            b = currUser.getPrivileges().get(Privilege.MOV);
         }
-        if(code.equals("dwn")){
-
-            return currUser.getPrivileges().get(Privilege.DWN);
-
+        if (code.equals("dwn")) {
+            b = currUser.getPrivileges().get(Privilege.DWN);
         }
 
-        return false;
+        return !b;
+
     }
 
     private boolean deleteDirectory(File directoryToBeDeleted) {
@@ -985,7 +795,8 @@ public class Connection implements connection.Connection {
         }
         return true;
     }
-    // recursive method to copy directory and sub-diretory in Java
+
+    @SuppressWarnings("all")
     private static void copyDirectoryRecursively(File source, File target)
             throws IOException {
         if (!target.exists()) {
@@ -1012,6 +823,7 @@ public class Connection implements connection.Connection {
         }
         return fileSize;
     }
+
     private static long getFileNumber(File dir) {
         long fileNum = 0;
 
@@ -1028,4 +840,122 @@ public class Connection implements connection.Connection {
         return fileNum;
     }
 
+    //exceptions
+
+    private void testConnection() {
+        if (!connOn) {
+            throw new ConnectionException("No active connection.");
+        }
+    }
+
+    private void testSuperUser() {
+        if (!storage.getCurrUser().getType().equals(UserType.SUPER)) {
+            throw new ConnectionException("User isn't superuser");
+        }
+    }
+
+    private void testSuperAdd(UserType type) {
+        if (type.equals(UserType.SUPER)) {
+            throw new ConnectionException("Superuser can only create regular users");
+        }
+    }
+
+    private void testUsername(String username) {
+        if (findUser(username) != null) {
+            throw new ConnectionException("Username taken");
+        }
+    }
+
+    private void testUsernameNotFound(String username) {
+        if (findUser(username) == null) {
+            throw new ConnectionException("User not found");
+        }
+    }
+    private void testUserTypeError(UserType type) {
+        if (!type.equals(UserType.REGULAR)) {
+            throw new ConnectionException("Usertype must be either SUPER or REGULAR");
+        }
+    }
+
+    private void testSuperSelfDel(String username) {
+        if (Objects.requireNonNull(findUser(username)).getUsername().equals(storage.getCurrUser().getUsername())) {
+            throw new ConnectionException("Superuser cannot delete itself");
+        }
+    }
+
+    private void testPrivilege(String p){
+        if (privilegeCheck(storage.getCurrUser(), p)) {
+            throw new ConnectionException("User doesn't have privilege for: " + p);
+        }
+    }
+
+    private void checkIfArgIsNull(Object arg) {
+        if (arg == null) {
+            throw new ConnectionException("Argument is null");
+        }
+    }
+
+    private void testUserForPrivilege(Privilege privilege, String username) {
+        try {
+            testUsernameNotFound(username);
+        }catch (ConnectionException e){
+            e.printStackTrace();
+            return;
+        }
+        LocalUser tUser = findUser(username);
+        assert tUser != null;
+        if (!tUser.getPrivileges().get(privilege)) {
+            throw new ConnectionException("User doesn't have this privilege");
+        }
+    }
+
+    private void testFileNum(){
+        if ((getFileNumber(new File(storage.getPath() + "/" + storage.getName())) + 1 > storage.getConfig().getFileNumLimit()) && storage.getConfig().getFileNumLimit() != -1) {
+            throw new ConnectionException("Exceeded file number limit.");
+        }
+    }
+
+    private void testStorageSize(String s){
+
+        File file = new File(s);
+
+        long size = getFileSize(file);
+        if ((size + getFileSize(new File(storage.getPath() + "/" + storage.getName())) > storage.getConfig().getSizeLimit()) && storage.getConfig().getSizeLimit() != -1) {
+            throw new ConnectionException("Exceeded storage size limit.");
+        }
+    }
+
+    private void testBlockedExtensions(String name){
+        String extension = "";
+        if (name.contains(".")) {
+            extension = name.split("\\.")[1];
+        }
+
+        if (storage.getConfig().getBlockedExtensions().contains(extension)) {
+            throw new ConnectionException("Extension not supported by storage");
+        }
+    }
+    private void testIfFileExists(String s) {
+        if (new File(s).exists()) {
+            throw new ConnectionException("File with same name already exists.");
+        }
+    }
+
+    private void unknownError(){
+        throw new ConnectionException("Unknown error happened");
+    }
+
+    private void isLimitLow(String s, int i) {
+        if (getFileSize(new File(s)) > i) {
+            throw new ConnectionException("Cannot limit storage size because it's currently larger than the provided limit");
+        }
+    }
+
+    private void failedAuth(){
+        throw new AuthException("Failed to authenticate user. Please check your username or password.");
+    }
+
+    private void takenConn(){
+        throw new ConnectionException("Another user is currently connected.");
+    }
 }

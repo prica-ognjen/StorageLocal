@@ -4,9 +4,7 @@ package model;
 import storage.Storage;
 import user.User;
 import java.util.ArrayList;
-import java.util.HashMap;
 import java.util.List;
-import java.util.Map;
 
 public class LocalStorage extends Storage {
 

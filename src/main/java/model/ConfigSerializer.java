@@ -1,15 +1,9 @@
 package model;
 
 import com.google.gson.*;
-import user.Privilege;
-import user.User;
-import user.UserType;
 
 import java.lang.reflect.Type;
 import java.util.ArrayList;
-import java.util.Collections;
-import java.util.HashMap;
-import java.util.Map;
 
 public class ConfigSerializer implements JsonSerializer<Config>, JsonDeserializer<Config> {
     @Override
@@ -17,17 +11,6 @@ public class ConfigSerializer implements JsonSerializer<Config>, JsonDeserialize
         JsonObject jsonUser = new JsonObject();
         jsonUser.addProperty("sizeLimit", config.getSizeLimit());
         jsonUser.addProperty("fileNumLimit", config.getFileNumLimit());
-
-        StringBuilder jsonArray = new StringBuilder();
-        jsonArray.append("[");
-        for(int i = 0; i < config.getBlockedExtensions().size()-1; i++){
-            jsonArray.append("\"");
-            jsonArray.append(config.getBlockedExtensions().get(i));
-            jsonArray.append("\"");
-            if(i != config.getBlockedExtensions().size()-2)
-                jsonArray.append(",");
-        }
-        jsonArray.append("]");
         jsonUser.addProperty("blockedExtensions", config.getBlockedExtensions().toString());
         return jsonUser;
     }
