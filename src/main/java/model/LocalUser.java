@@ -13,6 +13,7 @@ import java.io.File;
 import java.io.FileWriter;
 import java.io.IOException;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
@@ -117,9 +118,9 @@ public class LocalUser extends user.User {
             }else{
                 FileWriter out = new FileWriter(file);
                 GsonBuilder gsonBuilder = new GsonBuilder();
-                gsonBuilder.setPrettyPrinting().registerTypeAdapter(Config.class, new ConfigSerializer());
+                gsonBuilder.setPrettyPrinting();
                 Gson gson = gsonBuilder.create();
-                Config config = new Config(-1, -1, new ArrayList<>());
+                Config config = new Config(-1, -1, new ArrayList<>(), new ArrayList<>());
                 out.write(gson.toJson(config));
                 out.close();
             }

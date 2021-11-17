@@ -32,7 +32,7 @@ public class Connection implements connection.Connection {
         String name = root.getName();
         String path = root.getParent();
 
-        if(!checkIfStorageValid(root)){
+        if (!checkIfStorageValid(root)) {
             return null;
         }
 
@@ -40,7 +40,7 @@ public class Connection implements connection.Connection {
         File config = new File(root.getPath() + "/config.json");
 
         GsonBuilder gsonBuilder = new GsonBuilder();
-        Gson gson = gsonBuilder.registerTypeAdapter(Config.class, new ConfigSerializer()).create();
+        Gson gson = gsonBuilder.create();
 
         List<LocalUser> userList = new ArrayList<>();
         Config configJSON = null;
@@ -103,6 +103,42 @@ public class Connection implements connection.Connection {
         this.connOn = false;
     }
 
+    @Override
+    public String cd(String path){
+
+        if(path.equals("..")){
+
+            File file = new File(currDir);
+
+            if(file.isDirectory()){
+                currDir = file.getParentFile().getPath();
+            }
+
+            String str;
+
+            int storName = currDir.indexOf(storage.getName());
+
+            str = currDir.substring(storName);
+
+            str = str.replace("\\", "/");
+
+            return str;
+        }
+
+        File file = new File(currDir + "/" + path);
+
+        if(file.isDirectory()){
+            currDir = currDir + "/" + path;
+        }
+
+        String str;
+
+        int storName = currDir.indexOf(storage.getName());
+
+        str = currDir.substring(storName);
+
+        return str;
+    }
 
     @Override
     public boolean addUser(String username, String password, UserType type) {
@@ -162,6 +198,99 @@ public class Connection implements connection.Connection {
     }
 
     @Override
+    public boolean addPrivilege(String username, Privilege privilege, String path) {
+        DirConfig dirConfig;
+
+        List<Map<String, DirConfig>> list = storage.getConfig().getFileConfigMap();
+
+        String s1;
+
+        for (Map<String, DirConfig> stringDirConfigMap : list) {
+
+            s1 = storage.getPath() + "/" + storage.getName() + "/" + path;
+
+            s1 = s1.replace("/", "\\");
+
+            if (stringDirConfigMap.get(s1) != null) {
+                for (Map.Entry<String, DirConfig> e : stringDirConfigMap.entrySet()) {
+                    if (e.getValue() == null) {
+                        dirConfig = new DirConfig();
+
+                    } else {
+                        dirConfig = e.getValue();
+                    }
+                    Map<String, List<Privilege>> inMap = dirConfig.getBlockedPrivileges();
+
+
+                    if (inMap == null) {
+                        inMap = new HashMap<>();
+                    }
+
+                    boolean check = false;
+
+                    for (Map.Entry<String, List<Privilege>> lp : inMap.entrySet()) {
+
+                        if (lp.getKey().equals(username)) {
+
+                            List<Privilege> tList = lp.getValue();
+                            if (tList == null) {
+                                tList = new ArrayList<>();
+                            }
+
+                            tList.remove(privilege);
+
+                            lp.setValue(tList);
+                            check = true;
+                            break;
+                        }
+
+                    }
+                    if (!check) {
+                        List<Privilege> tList = new ArrayList<>();
+                        inMap.put(username, tList);
+                    }
+                    e.setValue(dirConfig);
+                }
+                break;
+            } else if (stringDirConfigMap.get(s1.replace("\\", "/")) != null) {
+                for (Map.Entry<String, DirConfig> e : stringDirConfigMap.entrySet()) {
+                    if (e.getValue() == null) {
+                        dirConfig = new DirConfig();
+
+                    } else {
+                        dirConfig = e.getValue();
+                    }
+                    Map<String, List<Privilege>> inMap = dirConfig.getBlockedPrivileges();
+
+                    if (inMap == null) {
+                        inMap = new HashMap<>();
+                    }
+
+                    for (Map.Entry<String, List<Privilege>> lp : inMap.entrySet()) {
+
+                        if (lp.getKey().equals(username)) {
+                            List<Privilege> tList = lp.getValue();
+                            if (tList == null) {
+                                tList = new ArrayList<>();
+                            }
+
+                            tList.remove(privilege);
+                            break;
+                        }
+
+                    }
+
+                    e.setValue(dirConfig);
+                }
+                break;
+            }
+        }
+
+        saveConfig(storage.getConfig());
+        return true;
+    }
+
+    @Override
     public boolean addPrivilege(String username, Privilege privilege) {
         //VIEW,Add,Dwn,mov,DEL -> mislim da je ovako ok
 
@@ -170,22 +299,127 @@ public class Connection implements connection.Connection {
             testSuperUser();
             testUsernameNotFound(username);
             checkIfArgIsNull(privilege);
-            testUserForPrivilege(privilege, username);
         } catch (ConnectionException e) {
             e.printStackTrace();
             return false;
         }
 
-        //proveri da li vazi hijerarhija privilegija
         List<LocalUser> tempUsers = getUserData();
 
         for (LocalUser u : tempUsers) {
             if (u.getUsername().equals(username)) {
+                for(Privilege p: privLevelAdd(privilege)){
+                    u.getPrivileges().put(p, true);
+                }
                 u.getPrivileges().put(privilege, true);
                 break;
             }
         }
         saveUserData(tempUsers);
+        return true;
+    }
+
+    @Override
+    public boolean delPrivilege(String username, Privilege privilege, String path) {
+        try {
+            testConnection();
+            testSuperUser();
+            testUsernameNotFound(username);
+            checkIfArgIsNull(privilege);
+        } catch (ConnectionException e) {
+            e.printStackTrace();
+            return false;
+        }
+
+        DirConfig dirConfig;
+
+        List<Map<String, DirConfig>> list = storage.getConfig().getFileConfigMap();
+
+        String s1;
+
+        for (Map<String, DirConfig> stringDirConfigMap : list) {
+
+            s1 = storage.getPath() + "/" + storage.getName() + "/" + path;
+
+            s1 = s1.replace("/", "\\");
+
+            if (stringDirConfigMap.get(s1) != null) {
+                for (Map.Entry<String, DirConfig> e : stringDirConfigMap.entrySet()) {
+                    if (e.getValue() == null) {
+                        dirConfig = new DirConfig();
+
+                    } else {
+                        dirConfig = e.getValue();
+                    }
+                    Map<String, List<Privilege>> inMap = dirConfig.getBlockedPrivileges();
+
+
+                    if (inMap == null) {
+                        inMap = new HashMap<>();
+                    }
+
+                    boolean check = false;
+
+                    for (Map.Entry<String, List<Privilege>> lp : inMap.entrySet()) {
+
+                        if (lp.getKey().equals(username)) {
+
+                            List<Privilege> tList = lp.getValue();
+                            if (tList == null) {
+                                tList = new ArrayList<>();
+                            }
+                            if(!tList.contains(privilege))
+                                tList.add(privilege);
+
+                            lp.setValue(tList);
+                            check = true;
+                            break;
+                        }
+
+                    }
+                    if (!check) {
+                        List<Privilege> tList = new ArrayList<>();
+                        tList.add(privilege);
+                        inMap.put(username, tList);
+                    }
+                    e.setValue(dirConfig);
+                }
+                break;
+            } else if (stringDirConfigMap.get(s1.replace("\\", "/")) != null) {
+                for (Map.Entry<String, DirConfig> e : stringDirConfigMap.entrySet()) {
+                    if (e.getValue() == null) {
+                        dirConfig = new DirConfig();
+
+                    } else {
+                        dirConfig = e.getValue();
+                    }
+                    Map<String, List<Privilege>> inMap = dirConfig.getBlockedPrivileges();
+
+                    if (inMap == null) {
+                        inMap = new HashMap<>();
+                    }
+
+                    for (Map.Entry<String, List<Privilege>> lp : inMap.entrySet()) {
+
+                        if (lp.getKey().equals(username)) {
+                            List<Privilege> tList = lp.getValue();
+                            if (tList == null) {
+                                tList = new ArrayList<>();
+                            }
+
+                            tList.add(privilege);
+                            break;
+                        }
+
+                    }
+
+                    e.setValue(dirConfig);
+                }
+                break;
+            }
+        }
+
+        saveConfig(storage.getConfig());
         return true;
     }
 
@@ -209,12 +443,97 @@ public class Connection implements connection.Connection {
 
         for (LocalUser u : tempUsers) {
             if (u.getUsername().equals(username)) {
-                u.getPrivileges().put(privilege, false);
+                for(Privilege p: privLevelRm(privilege)){
+                    u.getPrivileges().put(p, false);
+                }
                 break;
             }
         }
         saveUserData(tempUsers);
         return true;
+    }
+
+    @Override
+    public boolean importFile(String s, String s1) {
+
+        try {
+            File f = new File(s);
+            if(s1.equals(storage.getName())){
+                //dosmth
+            }
+
+            testConnection();
+            testPrivilege("add");
+            testFileNum();
+            testStorageSize(s);
+            //testIfFileExists();
+
+            if(!f.getParentFile().getName().equals(storage.getName())){
+                testPrivForDir(storage.getCurrUser().getUsername(), f.getParentFile(), Privilege.ADD);
+            }
+        } catch (ConnectionException e) {
+            e.printStackTrace();
+            return false;
+        }
+
+        File f = new File(s);
+
+        if(f.exists())
+            if(f.isDirectory()){
+                String root = storage.getPath() + "/" + storage.getName();
+
+                boolean created = false;
+
+                if(!s1.equals(storage.getName()))
+                    try {
+                        created = copyDirectory(f, new File(root + "/" + s1));
+                    } catch (IOException e) {
+                        e.printStackTrace();
+                    }
+                else
+                    try {
+                        created = copyDirectory(f, new File(root +"/"+ f.getName()));
+                    } catch (IOException e) {
+                        e.printStackTrace();
+                    }
+
+                    if(!created){
+                        unknownError();
+                    }
+
+                    HashMap<String, DirConfig> map = new HashMap<>();
+                    map.put(f.getPath(), new DirConfig());
+
+                    storage.getConfig().getFileConfigMap().add(map);
+                    saveConfig(storage.getConfig());
+
+                return true;
+            }else{
+
+                String root = storage.getPath() + "/" + storage.getName();
+                File f2;
+                if(!s1.equals(storage.getName())) {
+                    f2 = new File(root + "/" + s1 + f.getName());
+                }else{
+                    f2 = new File(root + "/" + f.getName());
+                }
+
+                boolean created = false;
+
+                try {
+                    created = f2.createNewFile();
+                } catch (IOException e) {
+                    e.printStackTrace();
+                }
+
+                if(!created){
+                    unknownError();
+                }
+                return true;
+            }
+
+
+        return false;
     }
 
     @Override
@@ -227,6 +546,13 @@ public class Connection implements connection.Connection {
             testFileNum();
             testStorageSize(currDir + "/" + name);
             testIfFileExists(currDir + "/" + name);
+
+            File f = new File(currDir + "/" + name);
+
+            if(!f.getParentFile().getName().equals(storage.getName())){
+                testPrivForDir(storage.getCurrUser().getUsername(), f.getParentFile(), Privilege.ADD);
+            }
+
         } catch (ConnectionException e) {
             e.printStackTrace();
             return false;
@@ -240,11 +566,19 @@ public class Connection implements connection.Connection {
                 created = file.createNewFile();
             } else {
                 created = file.mkdir();
+
+                HashMap<String, DirConfig> map = new HashMap<>();
+                map.put(file.getPath(), new DirConfig());
+
+                storage.getConfig().getFileConfigMap().add(map);
+                saveConfig(storage.getConfig());
             }
 
             if (!created) {
                 unknownError();
             }
+
+
         } catch (IOException e) {
             e.printStackTrace();
         }
@@ -256,6 +590,13 @@ public class Connection implements connection.Connection {
         try {
             testConnection();
             testPrivilege("del");
+
+            File f = new File(currDir + "/" + name);
+
+            if(!f.getParentFile().getName().equals(storage.getName())){
+                testPrivForDir(storage.getCurrUser().getUsername(), f.getParentFile(), Privilege.DEL);
+            }
+
         } catch (ConnectionException e) {
             e.printStackTrace();
             return false;
@@ -270,10 +611,18 @@ public class Connection implements connection.Connection {
     }
 
     @Override
-    public List<String> ls(){
+    public List<String> ls() {
         try {
             testConnection();
             testPrivilege("view");
+
+            File f = new File(currDir);
+
+            if (!f.getName().equals(storage.getName())) {
+                //System.out.println("uslo");
+                testPrivForDir(storage.getCurrUser().getUsername(), f, Privilege.VIEW);
+            }
+
         } catch (ConnectionException e) {
             e.printStackTrace();
             return null;
@@ -298,12 +647,17 @@ public class Connection implements connection.Connection {
         try {
             testConnection();
             testPrivilege("view");
+            File f = new File(currDir + "/" + s);
+
+            if(!f.getParentFile().getName().equals(storage.getName())){
+                testPrivForDir(storage.getCurrUser().getUsername(), f.getParentFile(), Privilege.VIEW);
+            }
         } catch (ConnectionException e) {
             e.printStackTrace();
             return null;
         }
 
-        File f = new File(currDir);
+        File f = new File(currDir + "/" + s);
 
         File[] allContents = f.listFiles();
 
@@ -311,7 +665,7 @@ public class Connection implements connection.Connection {
 
         assert allContents != null;
         for (File file : allContents) {
-            if(!file.isDirectory())
+            if (!file.isDirectory())
                 list.add(file.getName());
         }
 
@@ -323,12 +677,17 @@ public class Connection implements connection.Connection {
         try {
             testConnection();
             testPrivilege("view");
+            File f = new File(currDir + "/" + s);
+
+            if(!f.getParentFile().getName().equals(storage.getName())){
+                testPrivForDir(storage.getCurrUser().getUsername(), f.getParentFile(), Privilege.VIEW);
+            }
         } catch (ConnectionException e) {
             e.printStackTrace();
             return null;
         }
 
-        File f = new File(currDir);
+        File f = new File(currDir + "/" + s);
 
         File[] allContents = f.listFiles();
 
@@ -336,7 +695,7 @@ public class Connection implements connection.Connection {
 
         assert allContents != null;
         for (File file : allContents) {
-            if(file.isDirectory())
+            if (file.isDirectory())
                 list.add(file.getName());
         }
 
@@ -348,6 +707,11 @@ public class Connection implements connection.Connection {
         try {
             testConnection();
             testPrivilege("view");
+            File f = new File(currDir + "/" + s);
+
+            if(!f.getParentFile().getName().equals(storage.getName())){
+                testPrivForDir(storage.getCurrUser().getUsername(), f.getParentFile(), Privilege.VIEW);
+            }
         } catch (ConnectionException e) {
             e.printStackTrace();
             return null;
@@ -361,8 +725,8 @@ public class Connection implements connection.Connection {
 
         assert allContents != null;
         for (File file : allContents) {
-            if(file.getName().contains("."))
-                if(file.getName().split("\\.")[1].equals(s))
+            if (file.getName().contains("."))
+                if (file.getName().split("\\.")[1].equals(s))
                     list.add(file.getName());
         }
 
@@ -374,6 +738,11 @@ public class Connection implements connection.Connection {
         try {
             testConnection();
             testPrivilege("view");
+            File f = new File(currDir + "/" + s);
+
+            if(!f.getParentFile().getName().equals(storage.getName())){
+                testPrivForDir(storage.getCurrUser().getUsername(), f.getParentFile(), Privilege.VIEW);
+            }
         } catch (ConnectionException e) {
             e.printStackTrace();
             return null;
@@ -403,10 +772,14 @@ public class Connection implements connection.Connection {
     @Override
     @SuppressWarnings("all")
     public boolean movFile(String name, String to) {
-
         try {
             testConnection();
             testPrivilege("mov");
+            File f = new File(currDir + "/" + name);
+
+            if(!f.getParentFile().getName().equals(storage.getName())){
+                testPrivForDir(storage.getCurrUser().getUsername(), f.getParentFile(), Privilege.MOV);
+            }
         } catch (ConnectionException e) {
             e.printStackTrace();
             return false;
@@ -415,10 +788,11 @@ public class Connection implements connection.Connection {
         File f = new File(currDir + "/" + name);
         File dest;
 
+
         if (to.equals(storage.getName())) {
-            dest = new File(currDir + "/" + f.getName());
+            dest = new File(storage.getPath() + "/" + storage.getName() + "/" + f.getName());
         } else {
-            dest = new File(currDir + "/" + to + "/" + name);
+            dest = new File(storage.getPath() + "/" + storage.getName() + "/" + to + "/" + name);
         }
 
         if (f.isDirectory())
@@ -436,6 +810,11 @@ public class Connection implements connection.Connection {
         try {
             testConnection();
             testPrivilege("dwn");
+            File f = new File(currDir + "/" + name);
+
+            if(!f.getParentFile().getName().equals(storage.getName())){
+                testPrivForDir(storage.getCurrUser().getUsername(), f.getParentFile(), Privilege.DWN);
+            }
         } catch (ConnectionException e) {
             e.printStackTrace();
             return false;
@@ -482,7 +861,7 @@ public class Connection implements connection.Connection {
         try {
             testConnection();
             testSuperUser();
-            isLimitLow(storage.getPath(), i);
+            isLimitLow(storage.getPath() + "/" + storage.getName(), i, "root");
         } catch (ConnectionException e) {
             e.printStackTrace();
             return false;
@@ -495,19 +874,56 @@ public class Connection implements connection.Connection {
     }
 
     @Override
-    public boolean limitSize(String s, int i) {
+    public boolean limitSize(String s, int size) {
         try {
             testConnection();
             testSuperUser();
-            isLimitLow(s, i);
+            isLimitLow(storage.getPath() + "/" + storage.getName() + "/" + s, size, "reg");
         } catch (ConnectionException e) {
             e.printStackTrace();
             return false;
         }
 
-        storage.getConfig().setSizeLimit(i);
-        Config config = storage.getConfig();
-        saveConfig(config);
+        DirConfig dirConfig;
+
+        List<Map<String, DirConfig>> list = storage.getConfig().getFileConfigMap();
+
+        String s1;
+
+        for (Map<String, DirConfig> stringDirConfigMap : list) {
+
+            s1 = storage.getPath() + "/" + storage.getName() + "/" + s;
+
+            s1 = s1.replace("/", "\\");
+
+            if (stringDirConfigMap.get(s1) != null) {
+                for (Map.Entry<String, DirConfig> e : stringDirConfigMap.entrySet()) {
+                    if (e.getValue() == null) {
+                        dirConfig = new DirConfig();
+
+                    } else {
+                        dirConfig = e.getValue();
+                    }
+                    dirConfig.setSizeLimit(size);
+                    e.setValue(dirConfig);
+                }
+                break;
+            } else if (stringDirConfigMap.get(s1.replace("\\", "/")) != null) {
+                for (Map.Entry<String, DirConfig> e : stringDirConfigMap.entrySet()) {
+                    if (e.getValue() == null) {
+                        dirConfig = new DirConfig();
+
+                    } else {
+                        dirConfig = e.getValue();
+                    }
+                    dirConfig.setSizeLimit(size);
+                    e.setValue(dirConfig);
+                }
+                break;
+            }
+        }
+
+        saveConfig(storage.getConfig());
         return true;
     }
 
@@ -516,6 +932,7 @@ public class Connection implements connection.Connection {
         try {
             testConnection();
             testSuperUser();
+            testFileNum(); //mod
         } catch (ConnectionException e) {
             e.printStackTrace();
             return false;
@@ -528,8 +945,63 @@ public class Connection implements connection.Connection {
     }
 
     @Override
-    public boolean limitFileNum(String s, int i) {
+    public boolean limitFileNum(String s, int num) {
         //ovo treba za neki odredjeni dir
+        try {
+            testConnection();
+            testSuperUser();
+            testFileNum(); // treba za vise directory-ja da se modifikuje
+        } catch (ConnectionException e) {
+            e.printStackTrace();
+            return false;
+        }
+
+        DirConfig dirConfig;
+
+        List<Map<String, DirConfig>> list = storage.getConfig().getFileConfigMap();
+
+        String s1;
+
+        for (Map<String, DirConfig> stringDirConfigMap : list) {
+
+            s1 = storage.getPath() + "/" + storage.getName() + "/" + s;
+
+            s1 = s1.replace("/", "\\");
+
+            if (stringDirConfigMap.get(s1) != null) {
+                for (Map.Entry<String, DirConfig> e : stringDirConfigMap.entrySet()) {
+                    if (e.getValue() == null) {
+                        dirConfig = new DirConfig();
+
+                    } else {
+                        dirConfig = e.getValue();
+                    }
+
+                    dirConfig.setFileNumLimit(num);
+                    e.setValue(dirConfig);
+                }
+                break;
+            } else if (stringDirConfigMap.get(s1.replace("\\", "/")) != null) {
+                for (Map.Entry<String, DirConfig> e : stringDirConfigMap.entrySet()) {
+                    if (e.getValue() == null) {
+                        dirConfig = new DirConfig();
+
+                    } else {
+                        dirConfig = e.getValue();
+                    }
+                    dirConfig.setFileNumLimit(num);
+                    e.setValue(dirConfig);
+                }
+                break;
+            }
+        }
+
+        saveConfig(storage.getConfig());
+        return true;
+    }
+
+    @Override
+    public boolean unblockExt(String s, String s1) throws Exception {
         try {
             testConnection();
             testSuperUser();
@@ -538,7 +1010,23 @@ public class Connection implements connection.Connection {
             return false;
         }
 
-        storage.getConfig().setFileNumLimit(i);
+        storage.getConfig().getBlockedExtensions().remove(s);
+        Config config = storage.getConfig();
+        saveConfig(config);
+        return true;
+    }
+
+    @Override
+    public boolean unblockExt(String s) throws Exception {
+        try {
+            testConnection();
+            testSuperUser();
+        } catch (ConnectionException e) {
+            e.printStackTrace();
+            return false;
+        }
+
+        storage.getConfig().getBlockedExtensions().remove(s);
         Config config = storage.getConfig();
         saveConfig(config);
         return true;
@@ -555,7 +1043,6 @@ public class Connection implements connection.Connection {
         }
 
         storage.getConfig().getBlockedExtensions().add(s);
-        storage.getConfig().setBlockedExtensions(storage.getConfig().getBlockedExtensions());
         Config config = storage.getConfig();
         saveConfig(config);
         return true;
@@ -573,7 +1060,7 @@ public class Connection implements connection.Connection {
         }
 
         storage.getConfig().getBlockedExtensions().add(s1);
-        storage.getConfig().setBlockedExtensions(storage.getConfig().getBlockedExtensions());
+
         Config config = storage.getConfig();
         saveConfig(config);
         return true;
@@ -655,14 +1142,15 @@ public class Connection implements connection.Connection {
         if (check != null) {
             return check;
         } else {
-            try{
+            try {
                 failedAuth();
-            }catch (ConnectionException e){
+            } catch (ConnectionException e) {
                 e.printStackTrace();
             }
         }
         return null;
     }
+
     @SuppressWarnings("all")
     private boolean checkIfStorageValid(File root) {
 
@@ -689,7 +1177,7 @@ public class Connection implements connection.Connection {
         if (s.getCurrUser() != null) {
             try {
                 takenConn();
-            }catch (ConnectionException e){
+            } catch (ConnectionException e) {
                 e.printStackTrace();
             }
         }
@@ -871,6 +1359,7 @@ public class Connection implements connection.Connection {
             throw new ConnectionException("User not found");
         }
     }
+
     private void testUserTypeError(UserType type) {
         if (!type.equals(UserType.REGULAR)) {
             throw new ConnectionException("Usertype must be either SUPER or REGULAR");
@@ -883,11 +1372,91 @@ public class Connection implements connection.Connection {
         }
     }
 
-    private void testPrivilege(String p){
+    private void testPrivilege(String p) {
         if (privilegeCheck(storage.getCurrUser(), p)) {
             throw new ConnectionException("User doesn't have privilege for: " + p);
         }
     }
+
+    private void testPrivForDir(String username, File file, Privilege p) {
+
+        String parentDirName = file.getPath();
+
+        DirConfig dirConfig = getDirConfig(parentDirName);
+        if(dirConfig == null){
+            System.out.println("PLSNO");
+        }else{
+
+            List<Privilege> list = getFromDirConfig(username, dirConfig);
+            if(list.contains(p)){
+                throw new ConnectionException("User doesn't have privilege" + p + " for " + parentDirName);
+            }
+
+        }
+    }
+
+    private List<Privilege> getFromDirConfig(String user, DirConfig dirConfig){
+
+        Map<String, List<Privilege>> inMap = dirConfig.getBlockedPrivileges();
+
+        if (inMap == null) {
+            inMap = new HashMap<>();
+        }
+
+        for (Map.Entry<String, List<Privilege>> lp : inMap.entrySet()) {
+
+            if (lp.getKey().equals(user)) {
+
+                List<Privilege> tList = lp.getValue();
+                if (tList == null) {
+                    tList = new ArrayList<>();
+                }
+                return tList;
+            }
+
+        }
+        return new ArrayList<>();
+    }
+
+    private DirConfig getDirConfig(String s) {
+        DirConfig dirConfig;
+
+        List<Map<String, DirConfig>> list = storage.getConfig().getFileConfigMap();
+
+        String s1;
+        for (Map<String, DirConfig> stringDirConfigMap : list) {
+
+            s1 = s;
+
+            s1 = s1.replace("/", "\\");
+
+            if (stringDirConfigMap.get(s1) != null) {
+                for (Map.Entry<String, DirConfig> e : stringDirConfigMap.entrySet()) {
+                    if (e.getValue() == null) {
+                        dirConfig = new DirConfig();
+
+                    } else {
+                        dirConfig = e.getValue();
+                    }
+                    return dirConfig;
+                }
+            } else if (stringDirConfigMap.get(s1.replace("\\", "/")) != null) {
+                for (Map.Entry<String, DirConfig> e : stringDirConfigMap.entrySet()) {
+                    if (e.getValue() == null) {
+                        dirConfig = new DirConfig();
+
+                    } else {
+                        dirConfig = e.getValue();
+                    }
+                    return dirConfig;
+                }
+                break;
+            }
+        }
+        return null;
+
+    }
+
 
     private void checkIfArgIsNull(Object arg) {
         if (arg == null) {
@@ -898,7 +1467,7 @@ public class Connection implements connection.Connection {
     private void testUserForPrivilege(Privilege privilege, String username) {
         try {
             testUsernameNotFound(username);
-        }catch (ConnectionException e){
+        } catch (ConnectionException e) {
             e.printStackTrace();
             return;
         }
@@ -909,13 +1478,13 @@ public class Connection implements connection.Connection {
         }
     }
 
-    private void testFileNum(){
+    private void testFileNum() {
         if ((getFileNumber(new File(storage.getPath() + "/" + storage.getName())) + 1 > storage.getConfig().getFileNumLimit()) && storage.getConfig().getFileNumLimit() != -1) {
             throw new ConnectionException("Exceeded file number limit.");
         }
     }
 
-    private void testStorageSize(String s){
+    private void testStorageSize(String s) {
 
         File file = new File(s);
 
@@ -925,7 +1494,7 @@ public class Connection implements connection.Connection {
         }
     }
 
-    private void testBlockedExtensions(String name){
+    private void testBlockedExtensions(String name) {
         String extension = "";
         if (name.contains(".")) {
             extension = name.split("\\.")[1];
@@ -935,27 +1504,114 @@ public class Connection implements connection.Connection {
             throw new ConnectionException("Extension not supported by storage");
         }
     }
+
     private void testIfFileExists(String s) {
         if (new File(s).exists()) {
             throw new ConnectionException("File with same name already exists.");
         }
     }
 
-    private void unknownError(){
+    private void unknownError() {
         throw new ConnectionException("Unknown error happened");
     }
 
-    private void isLimitLow(String s, int i) {
-        if (getFileSize(new File(s)) > i) {
-            throw new ConnectionException("Cannot limit storage size because it's currently larger than the provided limit");
+    private void isLimitLow(String s, int i, String root) {
+        if (root.equals("root")) {
+            long rootSize = getFileSize(new File(s));
+            long userData = getFileSize(new File(s + "/userData.json"));
+            long config = getFileSize(new File(s + "/config.json"));
+
+            if (rootSize - userData - config > i) {
+                throw new ConnectionException("Cannot limit storage size because it's currently larger than the provided limit");
+            }
+        } else {
+            if (getFileSize(new File(s)) > i) {
+                throw new ConnectionException("Cannot limit storage size because it's currently larger than the provided limit");
+            }
         }
     }
 
-    private void failedAuth(){
+    private void failedAuth() {
         throw new AuthException("Failed to authenticate user. Please check your username or password.");
     }
 
-    private void takenConn(){
+    private void takenConn() {
         throw new ConnectionException("Another user is currently connected.");
     }
+
+    private List<Privilege> privLevelAdd(Privilege p){
+        //VIEW,Add,Dwn,mov,DEL -> mislim da je ovako ok
+
+        int level = 0;
+
+        if(p.equals(Privilege.VIEW))
+            level = 1;
+
+        if(p.equals(Privilege.ADD))
+            level = 2;
+
+        if(p.equals(Privilege.DWN))
+            level = 3;
+
+        if(p.equals(Privilege.MOV))
+            level = 4;
+
+        if(p.equals(Privilege.DEL))
+            level = 5;
+
+        List<Privilege> list = new ArrayList<>();
+
+        for(int i = 0; i < level; i++){
+            if(i == 0)
+                list.add(Privilege.VIEW);
+            if(i == 1)
+                list.add(Privilege.ADD);
+            if(i == 2)
+                list.add(Privilege.DWN);
+            if(i == 3)
+                list.add(Privilege.MOV);
+            if(i == 4)
+                list.add(Privilege.DEL);
+        }
+
+        return list;
+    }
+    private List<Privilege> privLevelRm(Privilege p){
+        //VIEW,Add,Dwn,mov,DEL -> mislim da je ovako ok
+
+        int level = 0;
+
+        if(p.equals(Privilege.VIEW))
+            level = 5;
+
+        if(p.equals(Privilege.ADD))
+            level = 4;
+
+        if(p.equals(Privilege.DWN))
+            level = 3;
+
+        if(p.equals(Privilege.MOV))
+            level = 2;
+
+        if(p.equals(Privilege.DEL))
+            level = 1;
+
+        List<Privilege> list = new ArrayList<>();
+
+        for(int i = 0; i < level; i++){
+            if(i == 0)
+                list.add(Privilege.DEL);
+            if(i == 1)
+                list.add(Privilege.MOV);
+            if(i == 2)
+                list.add(Privilege.DWN);
+            if(i == 3)
+                list.add(Privilege.ADD);
+            if(i == 4)
+                list.add(Privilege.VIEW);
+        }
+
+        return list;
+    }
+
 }
